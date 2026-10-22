@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "playbook.schema.json",
+  "title": "Playbook (canonical object), schema version 1",
+  "description": "Validates the canonical object of any playbook: front matter fields plus `content`. See spec/playbook-format.md.",
+  "type": "object",
+  "required": ["type", "id", "version", "last_reviewed", "content"],
+  "properties": {
+    "type": {"enum": ["guardrails", "task", "practice", "industry", "client", "matter"]},
+    "id": {"$ref": "#/$defs/slug"},
+    "schema_version": {"type": "integer", "minimum": 1},
+    "name": {"type": "string"},
+    "owner": {"type": "string"},
+    "updated_by": {"type": "string"},
+    "version": {"type": "integer", "minimum": 1},
+    "last_reviewed": {"$ref": "#/$defs/date"},
+    "expires": {"oneOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+    "content": {}
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"const": "guardrails"}}}, "then": {"properties": {"content": {"$ref": "#/$defs/guardrails_content"}}}},
+    {"if": {"properties": {"type": {"const": "task"}}}, "then": {"properties": {"content": {"$ref": "#/$defs/task_content"}}}},
+    {"if": {"properties": {"type": {"const": "practice"}}}, "then": {"properties": {"content": {"$ref": "#/$defs/practice_content"}}}},
+    {"if": {"properties": {"type": {"const": "industry"}}}, "then": {"properties": {"content": {"$ref": "#/$defs/industry_content"}}}},
+    {"if": {"properties": {"type": {"const": "client"}}}, "then": {"properties": {"content": {"$ref": "#/$defs/client_content"}}}},
+    {"if": {"properties": {"type": {"const": "matter"}}}, "then": {"properties": {"content": {"$ref": "#/$defs/matter_content"}}}}
+  ],
+  "$defs": {
+    "slug": {"type": "string", "pattern": "^(x-)?[a-z0-9]+(-[a-z0-9]+)*$"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "text": {"type": "string", "minLength": 1},
+    "text_or_list": {"oneOf": [{"$ref": "#/$defs/text"}, {"type": "array", "items": {"$ref": "#/$defs/text"}, "minItems": 1}]},
+    "text_list": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+    "severity": {"enum": ["low", "medium", "high"]},
+    "source": {"enum": ["stated", "client-instruction", "prior-matter", "firm-default", "matter-specific"]},
+
+    "guardrail": {
+      "type": "object",
+      "required": ["id", "trigger", "action"],
+      "properties": {
+        "id": {"$ref": "#/$defs/slug"},
+        "trigger": {"$ref": "#/$defs/text"},
+        "action": {"enum": ["flag", "escalate", "stop"]},
+        "escalate_to": {"oneOf": [{"$ref": "#/$defs/text"}, {"type": "null"}]},
+        "rationale": {"type": "string"}
+      },
+      "if": {"properties": {"action": {"const": "escalate"}}},
+      "then": {"required": ["escalate_to"], "properties": {"escalate_to": {"$ref": "#/$defs/text"}}}
+    },
+    "guardrails_content": {"type": "array", "items": {"$ref": "#/$defs/guardrail"}, "minItems": 1},
+
+    "step": {
+      "type": "object",
+      "required": ["id", "do"],
+      "properties": {
+        "id": {"$ref": "#/$defs/slug"},
+        "do": {"$ref": "#/$defs/text"},
+        "uses": {"type": "array", "items": {"enum": ["issues", "calibration", "guardrails", "facts", "term-sheet"]}}
+      }
+    },
+    "task_content": {
+      "type": "object",
+      "required": ["task", "task_type", "steps"],
+      "properties": {
+        "task": {"$ref": "#/$defs/slug"},
+        "task_type": {"enum": ["review", "draft", "advise"]},
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}, "minItems": 1},
+        "deliverable": {
+          "type": "object",
+          "properties": {
+            "outputs": {"type": "array", "items": {"type": "string"}},
+            "sections": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "redline_style": {"type": "string"},
+        "term_sheet_rule": {"type": "string"}
+      }
+    },
+
+    "firm_view": {
+      "type": "object",
+      "required": ["default"],
+      "properties": {
+        "default": {"$ref": "#/$defs/text"},
+        "unless": {"type": "string"},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "issue": {
+      "type": "object",
+      "required": ["key", "applies_to"],
+      "properties": {
+        "key": {"$ref": "#/$defs/slug"},
+        "title": {"type": "string"},
+        "kind": {"enum": ["legal", "commercial", "hybrid"]},
+        "applies_to": {
+          "type": "object",
+          "required": ["tasks"],
+          "properties": {
+            "tasks": {"type": "array", "items": {"$ref": "#/$defs/slug"}, "minItems": 1},
+            "practice_areas": {"type": "array", "items": {"$ref": "#/$defs/slug"}, "minItems": 1}
+          }
+        },
+        "why": {"type": "string"},
+        "triggers": {"$ref": "#/$defs/text_or_list"},
+        "look_for": {"$ref": "#/$defs/text_or_list"},
+        "check": {"$ref": "#/$defs/text_or_list"},
+        "firm_view": {"$ref": "#/$defs/firm_view"},
+        "instruction": {"$ref": "#/$defs/text_or_list"},
+        "market_position": {"type": "object", "additionalProperties": {"type": "string"}},
+        "approaches": {"type": "object", "propertyNames": {"enum": ["low", "moderate", "high"]}, "additionalProperties": {"type": "string"}},
+        "default_severity": {"$ref": "#/$defs/severity"},
+        "jurisdiction_note": {"type": "string"},
+        "rule": {"type": "string"}
+      },
+      "if": {"required": ["kind"], "properties": {"kind": {"const": "commercial"}}},
+      "then": {"not": {"required": ["firm_view"]}}
+    },
+    "practice_content": {"type": "array", "items": {"$ref": "#/$defs/issue"}, "minItems": 1},
+    "industry_content": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"allOf": [{"$ref": "#/$defs/issue"}, {"properties": {"applies_to": {"required": ["practice_areas"]}}}]}
+    },
+
+    "calibration_item": {
+      "type": "object",
+      "required": ["key"],
+      "properties": {
+        "key": {"$ref": "#/$defs/slug"},
+        "position": {"type": "string"},
+        "acceptable": {"$ref": "#/$defs/text_list"},
+        "never": {"$ref": "#/$defs/text_list"},
+        "red_line": {"type": "boolean"},
+        "accepts": {"type": "string"},
+        "severity": {"$ref": "#/$defs/severity"},
+        "instruction": {"$ref": "#/$defs/text_or_list"},
+        "history": {"$ref": "#/$defs/text_or_list"},
+        "note": {"type": "string"},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "client_content": {
+      "type": "object",
+      "properties": {
+        "industry": {"$ref": "#/$defs/slug"},
+        "role": {"type": "string"},
+        "risk_tolerance": {"enum": ["low", "moderate", "high"]},
+        "negotiation_style": {"type": "string"},
+        "decision_makers": {"type": "object", "additionalProperties": {"type": "string"}},
+        "communication": {"type": "string"},
+        "facts": {"$ref": "#/$defs/text_list"},
+        "calibration": {"type": "array", "items": {"$ref": "#/$defs/calibration_item"}}
+      }
+    },
+
+    "term": {
+      "type": "object",
+      "required": ["key"],
+      "properties": {"key": {"$ref": "#/$defs/slug"}, "value": {"type": "string"}, "note": {"type": "string"}}
+    },
+    "matter_content": {
+      "type": "object",
+      "required": ["client"],
+      "properties": {
+        "client": {"oneOf": [{"$ref": "#/$defs/slug"}, {"type": "array", "items": {"$ref": "#/$defs/slug"}, "minItems": 2}]},
+        "represents": {"type": "array", "items": {"type": "string"}},
+        "practice_area": {"$ref": "#/$defs/slug"},
+        "engagement_scope": {"type": "string"},
+        "conflicts_cleared": {"type": "array", "items": {"type": "string"}},
+        "question": {"type": "string"},
+        "facts": {"$ref": "#/$defs/text_list"},
+        "assumptions": {"$ref": "#/$defs/text_list"},
+        "decisions": {
+          "type": "object",
+          "properties": {"settled": {"type": "array"}, "open": {"type": "array"}}
+        },
+        "term_sheet": {
+          "type": "object",
+          "properties": {
+            "settled": {"type": "array", "items": {"$ref": "#/$defs/term"}},
+            "open": {"type": "array", "items": {"$ref": "#/$defs/term"}}
+          }
+        },
+        "calibration": {"type": "array", "items": {"$ref": "#/$defs/calibration_item"}},
+        "notes": {"$ref": "#/$defs/text_list"}
+      }
+    }
+  }
+}
