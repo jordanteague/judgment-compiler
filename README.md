@@ -6,6 +6,27 @@ The compiler interviews the lawyer in plain language. Nobody writes YAML.
 
 **Playbooks store durable questions and judgment, not ephemeral legal answers.** A playbook captures what to look for, why it matters, what needs checking, how the firm approaches it, and what an AI reviewer should do. Current law is left for the review tool to research at the time of review, so playbooks don't go stale when a rule changes.
 
+## Why
+
+Law firms have had playbooks forever: checklists, position papers, a partner's markup notes. They're written for other lawyers, so they lean on shared context. "Push back on the cap." "Use judgment on indemnity." "Standard market terms." A junior associate fills the gaps by asking down the hall. An AI agent can't.
+
+For an agent to apply a lawyer's judgment consistently, that judgment has to be explicit and operational:
+- **When does the issue arise?**
+- **What needs checking?**
+- **What's the default, and what changes it?**
+- **What should the agent do?**
+
+The judgment also has to be separated from things that look similar but behave differently: current law, market practice, one client's preference, a lesson from one past deal.
+
+That isn't a skill lawyers are trained in, or naturally inclined to practice. Expert judgment is mostly tacit. Lawyers know what they'd do in a given case far better than they can state the rule they follow. Asking them to write prompts or structured files mostly produces the same shorthand as a traditional playbook, in a new format.
+
+**judgment-compiler bridges that gap.** The lawyer just talks, the way they'd brief a colleague. The compiler does the translation:
+- it asks the follow-up a good associate would ask ("aggressive how?", "when wouldn't you?");
+- it keeps facts, history, preferences and instructions apart;
+- it leaves time-sensitive law out;
+- it shows the lawyer the complete result in plain English to approve;
+- it validates the output before anything is saved.
+
 ## Why "compiler"
 
 | Compiler stage | judgment-compiler |
