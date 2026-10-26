@@ -1,11 +1,12 @@
 ---
-type: guardrails
 id: no-version
-last_reviewed: 2026-10-22
+last_reviewed: 2026-10-25
 ---
 
 ```yaml
-- id: g
-  trigger: Something.
-  action: flag
+issues:
+  - key: g
+    guardrail:
+      when: Something.
+      action: flag
 ```

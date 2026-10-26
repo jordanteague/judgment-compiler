@@ -1,28 +1,23 @@
 # The playbook specification
 
-**Schema version 1**
+**Schema version 2**
 
-A platform-neutral specification for legal playbooks: structured records of a firm's professional judgment that AI tools can apply consistently. It doesn't depend on any AI platform. A playbook works the same whether the tool reading it is a Claude skill, a Microsoft Copilot agent, or anything else.
+A platform-neutral specification for playbooks: reusable, human-approved expert judgment that AI systems can apply consistently. It was developed for legal work. It doesn't depend on any AI platform. A playbook works the same whether the tool reading it is a Claude skill, a Microsoft Copilot agent, or anything else.
 
 **Playbooks store durable questions and judgment, not ephemeral legal answers.**
 
-## Three parts
+## Two parts
 
 | Part | Defines | For |
 |---|---|---|
-| [Playbook format](playbook-format.md) + [JSON Schema](schema/) | What a playbook is: types, fields, file structure, versioning | Everyone |
-| [Consumer requirements](consumer-requirements.md) | How a tool must combine playbooks to do legal work (CR1–CR18) | Review tools |
-| [Authoring protocol](authoring-protocol.md) | How playbooks must be created and changed (AP1–AP12) | Builders, interviewers, editors |
+| [Playbook format](playbook-format.md) + [JSON Schema](schema/) | What a playbook is: kinds of judgment, fields, file structure, versioning | Everyone |
+| [Authoring protocol](authoring-protocol.md) | How playbooks must be created and changed (AP1–AP15) | Builders, interviewers, editors |
 
-[Conformance](conformance.md) turns all three into testable checklists.
+[Conformance](conformance.md) turns both into testable checklists.
 
 ## Implementations
 
-| Implementation | Role | Platform |
-|---|---|---|
-| judgment-compiler ([`implementations/claude/`](../implementations/claude/)) | Producer (reference) | Claude |
-| [full-stack-reviewer](https://github.com/jordanteague/full-stack-reviewer) | Consumer (reference) | Claude |
-| [Copilot implementation guide](../implementations/copilot/) | Producer and consumer (guide only) | Microsoft 365 Copilot |
+The reference implementation is the Claude skill in [`implementations/claude/`](../implementations/claude/). Another platform can implement the authoring protocol and validate its output against the schema.
 
 ## Validating playbooks
 
@@ -31,8 +26,8 @@ pip install -r spec/requirements.txt
 python spec/tools/validate.py path/to/playbooks/
 ```
 
-The validator reads Markdown playbooks, builds the canonical object (format §3.3), validates it against `schema/playbook.schema.json`, and runs the cross-playbook checks in format §11. Its own tests are in `tests/` (`python spec/tests/run_tests.py`).
+The validator reads Markdown playbooks, builds the canonical object (format §3.2), validates it against `schema/playbook.schema.json`, and runs the checks in format §7. Its own tests are in `tests/` (`python spec/tests/run_tests.py`).
 
 ## Status
 
-Version 1 is a working draft, developed alongside the Claude reference implementations and tested in live interviews. Changes follow the versioning rules in format §10.
+Version 2 is a working draft. It replaces version 1's six playbook types with a single kind of playbook (format §8). Changes follow the versioning rules in format §6.

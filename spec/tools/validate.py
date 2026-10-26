@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Validate playbooks against the playbook specification (schema version 1).
+"""Validate playbooks against the playbook specification (schema version 2).
 
 Usage:
     python validate.py PATH [PATH ...]      # files or folders of .md playbooks
 
 What it does:
-  1. Reads each Markdown playbook and builds its canonical object (format §3.3).
+  1. Reads each Markdown playbook and builds its canonical object (format §3.2).
   2. Validates the object against schema/playbook.schema.json.
-  3. Runs the cross-playbook checks in format §11:
-       - duplicate type + id;
-       - calibration keys exist in a loaded practice or industry playbook (or start with "x-");
-       - warnings for unrecognized fields that don't start with "x-" (format §10.3);
-       - warnings for schema_version above the supported version (format §10.2).
+  3. Runs the checks in format §7 that JSON Schema can't express:
+       - a version 1 `type` field, or schema_version 1 (format §8);
+       - duplicate playbook id, and duplicate issue key within a playbook;
+       - a firm-default preference on a commercial issue;
+       - warnings for unrecognized fields that don't start with "x-" (format §6.3);
+       - warnings for schema_version above the supported version (format §6.2).
 
 Exit status: 0 if there are no errors (warnings allowed), 1 otherwise.
 Requires: pip install pyyaml jsonschema
@@ -28,10 +29,9 @@ try:
 except ImportError:
     sys.exit("validate.py needs PyYAML and jsonschema 4.0 or later: pip install -r spec/requirements.txt")
 
-SUPPORTED_SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSION = 2
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema" / "playbook.schema.json"
-LIST_TYPES = {"guardrails", "practice", "industry"}
-MAPPING_TYPES = {"task", "client", "matter"}
+PREFERENCE_FIELDS = ("position", "acceptable", "never", "red_line", "accepts")
 
 FRONT_MATTER = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n", re.DOTALL)
 YAML_BLOCK = re.compile(r"^```yaml[ \t]*\n(.*?)^```[ \t]*$", re.DOTALL | re.MULTILINE)
@@ -46,6 +46,29 @@ def _iso(value):
     if isinstance(value, list):
         return [_iso(v) for v in value]
     return value
+
+
+def merge_blocks(blocks):
+    """Combine body blocks (format §3.1): lists under the same section concatenate,
+    mappings merge, and a scalar section may appear only once. Returns (content, errors)."""
+    content, errors = {}, []
+    for b in blocks:
+        if not isinstance(b, dict):
+            errors.append("every body block must be a mapping of sections (for example `issues:`)")
+            continue
+        for section, value in b.items():
+            if section not in content:
+                content[section] = value
+            elif isinstance(content[section], list) and isinstance(value, list):
+                content[section] = content[section] + value
+            elif isinstance(content[section], dict) and isinstance(value, dict):
+                for k, v in value.items():
+                    if k in content[section]:
+                        errors.append(f"'{section}.{k}' is set in more than one body block")
+                    content[section][k] = v
+            else:
+                errors.append(f"section '{section}' appears in more than one body block with values that can't be combined")
+    return content, errors
 
 
 def canonical_object(path: Path):
@@ -67,45 +90,62 @@ def canonical_object(path: Path):
             blocks.append(yaml.safe_load(raw))
         except yaml.YAMLError as e:
             return None, [f"body block is not valid YAML: {e}"]
-
-    ptype = front.get("type")
-    errors = []
-    if ptype in LIST_TYPES:
-        content = []
-        for b in blocks:
-            if not isinstance(b, list):
-                errors.append(f"every body block in a {ptype} playbook must be a list")
-            else:
-                content.extend(b)
-    elif ptype in MAPPING_TYPES:
-        if len(blocks) != 1 or not isinstance(blocks[0], dict):
-            errors.append(f"a {ptype} playbook must have exactly one body block holding a mapping")
-            content = blocks[0] if blocks else None
-        else:
-            content = blocks[0]
-    else:
-        content = blocks
-    obj = _iso(dict(front, content=content))
-    return obj, errors
+    content, errors = merge_blocks(blocks)
+    return _iso(dict(front, content=content)), errors
 
 
 def known_fields(schema):
     """Collect recognised field names per object kind, for unknown-field warnings."""
     d = schema["$defs"]
-    props = lambda name: set(d[name]["properties"])
     return {
         "front": set(schema["properties"]),
-        "guardrails": props("guardrail"),
-        "task": props("task_content"),
-        "issue": props("issue"),
-        "client": props("client_content"),
-        "matter": props("matter_content"),
-        "calibration": props("calibration_item"),
+        "content": set(d["content"]["properties"]),
+        "issue": set(d["issue_base"]["properties"]) | {"source"},
     }
 
 
 def unknown(keys, allowed):
     return sorted(k for k in keys if k not in allowed and not str(k).startswith("x-"))
+
+
+def issues_of(obj):
+    content = obj.get("content")
+    issues = content.get("issues") if isinstance(content, dict) else None
+    return [i for i in issues if isinstance(i, dict)] if isinstance(issues, list) else []
+
+
+def check_playbook(f, obj, fields):
+    """Checks on one playbook that JSON Schema can't express. Returns (errors, warnings)."""
+    errors, warnings = [], []
+    if "type" in obj:
+        errors.append(f"{f}: 'type: {obj['type']}' is a schema version 1 field. Playbooks have no type in version 2 (format §8)")
+    sv = obj.get("schema_version")
+    if isinstance(sv, int) and sv < SUPPORTED_SCHEMA_VERSION:
+        errors.append(f"{f}: schema_version {sv} is no longer supported; migrate to version 2 (format §8)")
+    if isinstance(sv, int) and sv > SUPPORTED_SCHEMA_VERSION:
+        warnings.append(f"{f}: schema_version {sv} is newer than this validator supports ({SUPPORTED_SCHEMA_VERSION})")
+
+    for k in unknown(obj.keys(), fields["front"] | {"type"}):
+        warnings.append(f"{f}: unrecognized front matter field '{k}'")
+    content = obj.get("content")
+    if isinstance(content, dict):
+        for k in unknown(content.keys(), fields["content"]):
+            warnings.append(f"{f}: unrecognized section '{k}'")
+
+    seen = set()
+    for issue in issues_of(obj):
+        key = issue.get("key")
+        if key in seen:
+            errors.append(f"{f}: issue key '{key}' appears more than once")
+        seen.add(key)
+        for k in unknown(issue.keys(), fields["issue"]):
+            warnings.append(f"{f}: issue '{key}': unrecognized field '{k}'")
+        if issue.get("kind") == "commercial" and issue.get("source") == "firm-default":
+            set_prefs = [p for p in PREFERENCE_FIELDS if p in issue]
+            if set_prefs:
+                errors.append(f"{f}: issue '{key}': a firm-default preference ({', '.join(set_prefs)}) on a commercial issue. "
+                              "Business decisions belong to the client (format §5)")
+    return errors, warnings
 
 
 def main(argv):
@@ -131,52 +171,13 @@ def main(argv):
         for e in sorted(validator.iter_errors(obj), key=lambda e: list(e.path)):
             where = "/".join(str(p) for p in e.path) or "(root)"
             errors.append(f"{f}: {where}: {e.message}")
-        ident = (obj.get("type"), obj.get("id"))
+        ident = obj.get("id")
         if ident in loaded:
-            errors.append(f"{f}: duplicate playbook {ident[0]}:{ident[1]} (also in {loaded[ident][0]})")
+            errors.append(f"{f}: duplicate playbook id '{ident}' (also in {loaded[ident][0]})")
         loaded[ident] = (f, obj)
-
-        sv = obj.get("schema_version")
-        if isinstance(sv, int) and sv > SUPPORTED_SCHEMA_VERSION:
-            warnings.append(f"{f}: schema_version {sv} is newer than this validator supports ({SUPPORTED_SCHEMA_VERSION})")
-        for k in unknown(obj.keys(), fields["front"]):
-            warnings.append(f"{f}: unrecognized front matter field '{k}'")
-        content, ptype = obj.get("content"), obj.get("type")
-        if ptype in ("practice", "industry") and isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict):
-                    for k in unknown(item.keys(), fields["issue"]):
-                        warnings.append(f"{f}: issue '{item.get('key')}': unrecognized field '{k}'")
-        if ptype == "guardrails" and isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict):
-                    for k in unknown(item.keys(), fields["guardrails"]):
-                        warnings.append(f"{f}: guardrail '{item.get('id')}': unrecognized field '{k}'")
-        if ptype in ("task", "client", "matter") and isinstance(content, dict):
-            for k in unknown(content.keys(), fields[ptype]):
-                warnings.append(f"{f}: unrecognized field '{k}'")
-            for item in content.get("calibration") or []:
-                if isinstance(item, dict):
-                    for k in unknown(item.keys(), fields["calibration"]):
-                        warnings.append(f"{f}: calibration '{item.get('key')}': unrecognized field '{k}'")
-
-    # Cross-playbook: calibration keys must exist in a loaded practice or industry playbook.
-    issue_keys = {
-        item.get("key")
-        for (ptype, _), (_, obj) in loaded.items()
-        if ptype in ("practice", "industry") and isinstance(obj.get("content"), list)
-        for item in obj["content"] if isinstance(item, dict)
-    }
-    for (ptype, _), (f, obj) in loaded.items():
-        content = obj.get("content")
-        if ptype in ("client", "matter") and isinstance(content, dict):
-            for item in content.get("calibration") or []:
-                key = item.get("key") if isinstance(item, dict) else None
-                if key and not str(key).startswith("x-"):
-                    if not issue_keys:
-                        warnings.append(f"{f}: calibration key '{key}' not checked (no practice or industry playbooks loaded)")
-                    elif key not in issue_keys:
-                        errors.append(f"{f}: calibration key '{key}' matches no loaded practice or industry issue")
+        errs, warns = check_playbook(f, obj, fields)
+        errors += errs
+        warnings += warns
 
     for w in warnings:
         print(f"WARNING  {w}")

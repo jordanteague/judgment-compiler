@@ -1,12 +1,11 @@
 ---
-type: client
 id: bad-source
 version: 1
-last_reviewed: 2026-10-22
+last_reviewed: 2026-10-25
 ---
 
 ```yaml
-calibration:
+issues:
   - key: example-issue
     position: Something.
     source: a-hunch

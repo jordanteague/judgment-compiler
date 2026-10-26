@@ -1,12 +1,13 @@
 ---
-type: guardrails
 id: bad-escalate
 version: 1
-last_reviewed: 2026-10-22
+last_reviewed: 2026-10-25
 ---
 
 ```yaml
-- id: g
-  trigger: Something.
-  action: escalate
+issues:
+  - key: g
+    guardrail:
+      when: Something.
+      action: escalate
 ```
